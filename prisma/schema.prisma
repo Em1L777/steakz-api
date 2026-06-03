@@ -1,0 +1,104 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  HQ_MANAGER
+  BRANCH_MANAGER
+  CHEF
+  WAITER
+}
+
+enum OrderStatus {
+  PENDING
+  IN_PROGRESS
+  READY
+  COMPLETED
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String   @unique
+  password  String
+  role      Role
+  isActive  Boolean  @default(true)
+  branch    Branch?  @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  branchId  Int?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Branch {
+  id           Int           @id @default(autoincrement())
+  name         String        @unique
+  location     String
+  users        User[]
+  inventories  Inventory[]
+  deliveries   Delivery[]
+  reservations Reservation[]
+  orders       Order[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+}
+
+model Inventory {
+  id        Int      @id @default(autoincrement())
+  itemName  String
+  quantity  Int      @default(0)
+  price     Float    @default(0.0)      
+  category  String   @default("Steaks")
+  desc      String   @default("")       
+  emoji     String   @default("🥩")
+  imageUrl  String?     
+  branch    Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  branchId  Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([branchId, itemName])
+}
+
+model Delivery {
+  id          Int      @id @default(autoincrement())
+  supplier    String
+  details     String
+  receivedAt  DateTime @default(now())
+  branch      Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  branchId    Int
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Reservation {
+  id              Int      @id @default(autoincrement())
+  customerName    String
+  customerContact String
+  tableNumber     Int
+  reservedFor     DateTime
+  branch          Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  branchId        Int
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  status          String   @default("active") // "active", "arrived", "completed", "cancelled"
+  arrivedAt       DateTime?
+}
+
+model Order {
+  id          Int         @id @default(autoincrement())
+  tableNumber Int
+  details     String      // Stores food breakdown items structured elegantly
+  totalPrice  Float       @default(0.0)
+  isPaid      Boolean     @default(false)
+  status      OrderStatus @default(PENDING)
+  branch      Branch      @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  branchId    Int
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+}
