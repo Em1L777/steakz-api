@@ -58,17 +58,19 @@ app.use('/uploads', express.static(path.join(__dirname, '../public/uploads')));
 // =========================================================================
 // 🔄 UNIQUE PATTERN ROUTE PRIORITIZATION MATCHING (Fixes 403 Error)
 // =========================================================================
-app.use('/api/branches/:branchId/inventory', inventoryRoutes);  
-app.use('/api/branches/:branchId/orders', orderRoutes);        
-app.use('/api/branches/:branchId/deliveries', deliveryRoutes);  
-app.use('/api/branches/:branchId/employees', employeeRoutes);   
-app.use('/api/branches/:branchId/reservations', reservationRoutes); 
+
 
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/branches', branchRoutes);
 app.use('/api/branches/:branchId/reports', reportRoutes);
 app.use('/api/hq/reports', hqReportRoutes);
+
+app.use('/api/branches/:branchId/inventory', inventoryRoutes);  
+app.use('/api/branches/:branchId/orders', orderRoutes);        
+app.use('/api/branches/:branchId/deliveries', deliveryRoutes);  
+app.use('/api/branches/:branchId/employees', employeeRoutes);   
+app.use('/api/branches/:branchId/reservations', reservationRoutes); 
 
 app.listen(port, () => {
   console.log(`[STABLE RUNTIME] Steakz Grill Ecosystem online on port: ${port}`);

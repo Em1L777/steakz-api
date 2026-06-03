@@ -9,6 +9,10 @@ import { fileURLToPath } from 'url';
 
 const router = Router({ mergeParams: true });
 
+interface RouteParams {
+  branchId: string;
+}
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -43,8 +47,8 @@ const uploadProcessor = multer({
 // 🔓 PUBLIC VIEW: GET /api/branches/:branchId/inventory
 // ==========================================
 router.get('/', async (req, res) => {
-  const rawBranchId = Array.isArray(req.query.branchId) ? req.query.branchId[0] : req.query.branchId;
-  const branchId = rawBranchId ? parseInt(rawBranchId as string, 10) : undefined;
+  const params = req.params as { branchId: string };
+  const branchId = parseInt(params.branchId, 10);
 
   if (!branchId || isNaN(branchId)) {
     res.status(400).json({ error: 'Valid integer branch identification parameter required.' });
@@ -83,8 +87,8 @@ router.put(
       next();
     });
   }, async (req: any, res: any) => {
-  const rawBranchId = Array.isArray(req.query.branchId) ? req.query.branchId[0] : req.query.branchId;
-  const branchId = rawBranchId ? parseInt(rawBranchId as string, 10) : undefined;
+  const params = req.params as { branchId: string };
+  const branchId = parseInt(params.branchId, 10);
   if (branchId === undefined || isNaN(branchId)) {
   return res.status(400).json({ error: "A valid branchId query parameter is required to upsert items." });
 }
