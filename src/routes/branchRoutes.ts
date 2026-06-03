@@ -24,7 +24,10 @@ router.get('/', async (req, res) => {
 
 // 2. GET /api/branches/:branchId/employees — Fetch staff assigned to this specific node
 router.get('/:branchId/employees', async (req: Request, res: Response) => {
-  const branchId = parseInt(req.params.branchId || '0' as string, 10);
+  const rawBranchId = Array.isArray(req.query.branchId) 
+  ? req.query.branchId[0] 
+  : req.query.branchId;
+  const branchId = rawBranchId ? parseInt(rawBranchId as string, 10) : undefined;
   try {
     const employees = await prisma.user.findMany({
       where: { branchId },
@@ -39,7 +42,10 @@ router.get('/:branchId/employees', async (req: Request, res: Response) => {
 
 // 3. POST /api/branches/:branchId/employees — Hire a new Chef or Waiter into this specific branch
 router.post('/:branchId/employees', async (req: Request, res: Response) => {
-  const branchId = parseInt(req.params.branchId || '0' as string, 10);
+  const rawBranchId = Array.isArray(req.query.branchId) 
+  ? req.query.branchId[0] 
+  : req.query.branchId;
+  const branchId = rawBranchId ? parseInt(rawBranchId as string, 10) : undefined;
   const { name, email, password, role } = req.body as {
     name?: string; email?: string; password?: string; role?: 'CHEF' | 'WAITER';
   };
@@ -68,7 +74,8 @@ router.post('/:branchId/employees', async (req: Request, res: Response) => {
 
 // 4. DELETE /api/branches/:branchId/employees/:id — Terminate branch employment node assignment
 router.delete('/:branchId/employees/:id', async (req: Request, res: Response) => {
-  const id = parseInt(req.params.id || '0' as string, 10);
+  const rawId = Array.isArray(req.query.id) ? req.query.id[0] : req.query.id;
+  const id = rawId ? parseInt(rawId as string, 10) : undefined;
   try {
     await prisma.user.delete({ where: { id } });
     res.json({ message: 'Roster profile cleared from database ledger.' });

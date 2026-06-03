@@ -9,7 +9,12 @@ const router = Router();
 
 // POST /api/branches/:branchId/employees — Hierarchical local staffing hiring
 router.post('/:branchId/employees', verifyToken, branchLock, requireRole(['BRANCH_MANAGER']), async (req: Request, res: Response) => {
-  const branchId = parseInt(req.params.branchId || '0' as string, 10);
+  const rawBranchId = Array.isArray(req.query.branchId) 
+  ? req.query.branchId[0] 
+  : req.query.branchId;
+
+// 2. Convert it to a number (or leave it undefined if it wasn't provided)
+const branchId = rawBranchId ? parseInt(rawBranchId as string, 10) : undefined;
   
   // Clean, compliant destructured type assertion assignment
   const { name, email, password, role } = req.body;

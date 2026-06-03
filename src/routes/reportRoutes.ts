@@ -7,19 +7,18 @@ import { branchLock } from '../middleware/branchLock.js';
 // ✅ CRITICAL FIX: mergeParams: true allows reading the parent route parameter ":branchId" from index.ts
 const router = Router({ mergeParams: true });
 
-
-
-
-
-
-
 // =====================================================================================
 // GET /api/branches/:branchId/reports/metrics
 // ✅ CRITICAL FIX: Changed path from '/api/branches/:branchId/reports/metrics' to '/metrics'
 // =====================================================================================
 router.get('/metrics', verifyToken, branchLock, requireRole(['BRANCH_MANAGER', 'HQ_MANAGER', 'ADMIN']), async (req, res) => {
   // Safe parsing of the upstream path parameters parameter
-  const branchId = parseInt(req.params['branchId'] || '0', 10);
+  const rawBranchId = Array.isArray(req.query.branchId) 
+  ? req.query.branchId[0] 
+  : req.query.branchId;
+
+// 2. Convert it to a number (or leave it undefined if it wasn't provided)
+const branchId = rawBranchId ? parseInt(rawBranchId as string, 10) : undefined;
   
   if (!branchId || isNaN(branchId)) {
     res.status(400).json({ error: 'A valid branch verification parameters path configuration is required.' });

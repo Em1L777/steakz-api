@@ -13,11 +13,14 @@ function parseOrderDetails(details: string): { itemName: string; qty: number }[]
   return lines.map(line => {
     const match = line.match(/^(\d+)x\s+(.+)$/);
     if (match) {
-      return {
-        qty: parseInt(match[1], 10),
-        itemName: match[2].trim()
-      };
-    }
+  return {
+    // Fall back to an empty string if the group is missing, then parse it
+    qty: parseInt(match[1] || "1", 10), 
+    
+    // Fall back to an empty string before calling .trim()
+    itemName: (match[2] || "").trim() 
+  };
+}
     return { qty: 1, itemName: line }; // Fallback descriptor framework
   });
 }

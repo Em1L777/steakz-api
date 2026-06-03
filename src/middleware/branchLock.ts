@@ -3,10 +3,10 @@ import type { Request, Response, NextFunction } from 'express';
 // Define a local interface matching your authentication payload parameters
 interface AuthenticatedUser {
   id: number;
-  name: string;
-  email: string;
-  role: 'ADMIN' | 'HQ_MANAGER' | 'BRANCH_MANAGER';
-  branchId?: number | null; // Nullable for global accounts, Int for branch managers
+  name?: string;
+  email?: string;
+  role: string;
+  branchId: number | null; // Nullable for global accounts, Int for branch managers
 }
 
 // Extend the native Express Request interface safely for this file block

@@ -73,7 +73,8 @@ if (userRole === 'WAITER') {
 // ✅ NEW WORKFLOW ACTION: PATCH /api/branches/:branchId/reservations/:id/arrive
 // Exclusively updates a reservation's state to "arrived" when triggered by floor staff
 router.patch('/:id/arrive', verifyToken, branchLock, requireRole(['WAITER']), async (req: Request, res: Response) => {
-  const id = parseInt(req.params['id'] || '0', 10);
+    const rawId = Array.isArray(req.query.id) ? req.query.id[0] : req.query.id;
+  const id = rawId ? parseInt(rawId as string, 10) : undefined;
 
   try {
     const targetReservation = await prisma.reservation.findUnique({ where: { id } });

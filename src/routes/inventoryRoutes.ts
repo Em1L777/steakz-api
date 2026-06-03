@@ -43,7 +43,8 @@ const uploadProcessor = multer({
 // 🔓 PUBLIC VIEW: GET /api/branches/:branchId/inventory
 // ==========================================
 router.get('/', async (req, res) => {
-  const branchId = parseInt(req.params.branchId || '0', 10);
+  const rawBranchId = Array.isArray(req.query.branchId) ? req.query.branchId[0] : req.query.branchId;
+  const branchId = rawBranchId ? parseInt(rawBranchId as string, 10) : undefined;
 
   if (!branchId || isNaN(branchId)) {
     res.status(400).json({ error: 'Valid integer branch identification parameter required.' });
@@ -66,18 +67,28 @@ router.get('/', async (req, res) => {
 // 🔒 SECURE WORKSPACE: PUT /api/branches/:branchId/inventory
 // ==========================================
 // We intercept with uploadProcessor.single('dishImage') to seamlessly handle incoming multipart/form-data payloads
-router.put('/', verifyToken, branchLock, requireRole(['BRANCH_MANAGER', 'CHEF']), (req, res, next) => {
-  uploadProcessor.single('dishImage')(req, res, (err: { message: any; }) => {
-    if (err instanceof multer.MulterError) {
-      return res.status(400).json({ error: `File payload constraint error: ${err.message}` });
-    } else if (err) {
-      return res.status(400).json({ error: err.message });
-    }
-    next();
-  });
-}, async (req: any, res: any) => {
-  const branchId = parseInt(req.params.branchId || '0', 10);
-  
+router.put(
+  '/',
+  verifyToken,
+  branchLock,
+  requireRole(['BRANCH_MANAGER', 'CHEF']),
+  // 1. Multer Middleware Wrapper
+  (req: any, res: any, next: any) => {
+    uploadProcessor.single('dishImage')(req, res, (err: any) => {
+      if (err instanceof multer.MulterError) {
+        return res.status(400).json({ error: `File payload constraint error: ${err.message}` });
+      } else if (err) {
+        return res.status(400).json({ error: err.message });
+      }
+      next();
+    });
+  }, async (req: any, res: any) => {
+  const rawBranchId = Array.isArray(req.query.branchId) ? req.query.branchId[0] : req.query.branchId;
+  const branchId = rawBranchId ? parseInt(rawBranchId as string, 10) : undefined;
+  if (branchId === undefined || isNaN(branchId)) {
+  return res.status(400).json({ error: "A valid branchId query parameter is required to upsert items." });
+}
+
   // Notice: Fields arrive as textual string strings inside req.body due to multipart parsing standards
   const { itemName, quantity, price, category, desc, emoji } = req.body as { 
     itemName?: string; quantity?: string; price?: string; category?: string; desc?: string; emoji?: string;
