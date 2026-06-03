@@ -46,9 +46,9 @@ const branchId = rawBranchId ? parseInt(rawBranchId as string, 10) : undefined;
 
 // =========================================================================
 // 🔓 GET: Fetch & Filter Employee Roster
+// URL: GET /api/branches/:branchId/employees
 // =========================================================================
 router.get('/', verifyToken, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_MANAGER']), async (req: Request, res: Response) => {
-  // Now safely reads the branchId from index.ts!
   const params = req.params as { branchId: string };
   const pathBranchId = parseInt(params.branchId, 10);
 
@@ -60,9 +60,12 @@ router.get('/', verifyToken, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_MANAGER
   try {
     const queryConditions: any = {};
 
+    // Strict Multi-Tenant Enforcement:
+    // If user is a BRANCH_MANAGER, they can only view employees in their assigned branch ID
     if (req.user?.role === 'BRANCH_MANAGER') {
       queryConditions.branchId = req.user.branchId;
     } else {
+      // ADMIN or HQ_MANAGER can inspect whatever branch is passed into the URL path
       queryConditions.branchId = pathBranchId;
     }
 
@@ -88,8 +91,10 @@ router.get('/', verifyToken, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_MANAGER
 
 // =========================================================================
 // 🔒 DELETE: Securely Terminate Personnel Account Profiles
+// URL: DELETE /api/branches/:branchId/employees/:id
 // =========================================================================
 router.delete('/:id', verifyToken, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_MANAGER']), async (req: Request, res: Response) => {
+  // Read target employee ID straight from the local parameter node
   const params = req.params as { id: string };
   const targetEmployeeId = parseInt(params.id, 10);
 
@@ -99,6 +104,7 @@ router.delete('/:id', verifyToken, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_M
   }
 
   try {
+    // 1. Look up target profile from Neon DB to check its branch assignment
     const targetUser = await prisma.user.findUnique({
       where: { id: targetEmployeeId }
     });
@@ -108,6 +114,7 @@ router.delete('/:id', verifyToken, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_M
       return;
     }
 
+    // 2. Multi-Tenant Check: If the caller is a Branch Manager, enforce matching branchIds
     if (req.user?.role === 'BRANCH_MANAGER') {
       if (targetUser.branchId !== req.user.branchId) {
         res.status(403).json({ error: 'Forbidden: You cannot delete personnel belonging to other branches.' });
@@ -115,6 +122,7 @@ router.delete('/:id', verifyToken, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_M
       }
     }
 
+    // 3. Clear authorization checks -> Execute deletion transaction safely
     await prisma.user.delete({
       where: { id: targetEmployeeId }
     });
