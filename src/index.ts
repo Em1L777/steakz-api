@@ -33,7 +33,19 @@ if (!fs.existsSync(uploadDir)) {
 
 // CORS configuration supporting dynamic validation for both local workspace setups and remote domains
 app.use(cors({
-  origin: allowedOrigin,
+  origin: (origin, callback) => {
+    // 1. Allow server-to-server or REST client tools (like Postman) where origin is undefined
+    if (!origin) return callback(null, true);
+    
+    // 2. Allow exact matches from our explicitly defined local or production values
+    if (allowedOrigin.includes(origin)) return callback(null, true);
+    
+    // 3. Dynamically allow any automatic preview sub-branch domain coming from Vercel
+    if (origin.endsWith('.vercel.app')) return callback(null, true);
+    
+    // Reject unknown or untrusted third-party origins
+    return callback(new Error('CORS Policy block: Origin domain unauthorized.'));
+  },
   credentials: true
 }));
 
