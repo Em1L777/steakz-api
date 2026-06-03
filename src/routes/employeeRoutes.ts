@@ -43,21 +43,48 @@ const branchId = rawBranchId ? parseInt(rawBranchId as string, 10) : undefined;
   }
 });
 
-// DELETE /api/branches/:branchId/employees/:id — Terminate branch employment
-router.delete('/:branchId/employees/:id', verifyToken, branchLock, requireRole(['BRANCH_MANAGER']), async (req, res) => {
-  const branchId = parseInt(req.params['branchId'] as string || '0', 10);
-  const employeeId = parseInt(req.params['id'] as string || '0', 10);
-
-  // Security check: Verify the employee actually belongs to the manager's branch before deleting
-  const employee = await prisma.user.findUnique({ where: { id: employeeId } });
+// =========================================================================
+// DELETE /api/branches/:branchId/employees/:id
+// ✅ SECURE: Prevents Branch Managers from deleting cross-branch personnel accounts
+// =========================================================================
+router.delete('/:branchId/employees/:id', verifyToken, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_MANAGER']), async (req: any, res: any) => {
+  const targetEmployeeId = parseInt(req.params.id, 10);
   
-  if (!employee || employee.branchId !== branchId) {
-    res.status(403).json({ error: 'Deactivation request blocked. Profile targets external branch matrix.' });
-    return;
+  if (isNaN(targetEmployeeId)) {
+    return res.status(400).json({ error: 'Valid integer employee account identifier parameter required.' });
   }
 
-  await prisma.user.delete({ where: { id: employeeId } });
-  res.json({ message: 'Employee file deactivated from active system terminals.' });
+  try {
+    // 1. Fetch the target user profile from the database to inspect branch location assignment
+    const targetUser = await prisma.user.findUnique({
+      where: { id: targetEmployeeId }
+    });
+
+    if (!targetUser) {
+      return res.status(404).json({ error: 'The requested employee contract profile could not be located.' });
+    }
+
+    // 2. Enforce strict location boundaries if the request comes from a local Branch Manager
+    if (req.user.role === 'BRANCH_MANAGER') {
+      const managerBranchId = req.user.branchId;
+
+      if (!managerBranchId || targetUser.branchId !== managerBranchId) {
+        return res.status(403).json({ 
+          error: 'Security Authorization Fault: You are restricted from managing personnel belonging to other location registries.' 
+        });
+      }
+    }
+
+    // 3. Authorization check complete -> execute deletion transaction safely
+    await prisma.user.delete({
+      where: { id: targetEmployeeId }
+    });
+
+    res.json({ message: 'Personnel contract registry profile destroyed successfully.' });
+  } catch (error) {
+    console.error("Secure personnel eviction database transaction crash: ", error);
+    res.status(500).json({ error: "Internal server registry error processing account eviction." });
+  }
 });
 
 export default router;
