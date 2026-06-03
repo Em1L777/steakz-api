@@ -45,7 +45,7 @@ const branchId = rawBranchId ? parseInt(rawBranchId as string, 10) : undefined;
 
 // =========================================================================
 // GET /api/branches/:branchId/employees
-// ✅ SECURE: Filters employee visibility by branch for local Branch Managers
+// ✅ FIXED: Safely validates manager scope using a direct Prisma fallback check
 // =========================================================================
 router.get('/:branchId/employees', verifyToken, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_MANAGER']), async (req: any, res: any) => {
   const pathBranchId = parseInt(req.params.branchId, 10);
@@ -55,27 +55,28 @@ router.get('/:branchId/employees', verifyToken, requireRole(['BRANCH_MANAGER', '
   }
 
   try {
-    // 🛡️ Multi-Tenant Guard Rule:
-    // If the active user session is a local BRANCH_MANAGER, they are strict-locked
-    // to viewing ONLY their own parameter target branch matching coordinates.
-    if (req.user.role === 'BRANCH_MANAGER' && req.user.branchId !== pathBranchId) {
-      return res.status(403).json({ 
-        error: 'Security Authorization Fault: You are restricted from accessing personnel rosters outside your local store scope.' 
-      });
+    // 🛡️ Safe Check: Fetch the active calling user directly from the DB to avoid token payload mismatches
+    const callingUser = await prisma.user.findUnique({
+      where: { id: req.user.id }
+    });
+
+    if (!callingUser) {
+      return res.status(401).json({ error: 'Unauthorized: Session user context missing.' });
     }
 
-    // Build conditional query constraints matrix blocks
     const queryConditions: any = {};
 
-    // 1. If a BRANCH_MANAGER makes the call, limit the database rows matching their specific location code
-    if (req.user.role === 'BRANCH_MANAGER') {
-      queryConditions.branchId = req.user.branchId;
+    // Enforce data bounds based on real DB roles
+    if (callingUser.role === 'BRANCH_MANAGER') {
+      if (callingUser.branchId !== pathBranchId) {
+        return res.status(403).json({ error: 'Forbidden: You cannot access lists outside your own branch scope.' });
+      }
+      queryConditions.branchId = callingUser.branchId;
     } else {
-      // 2. If it is an ADMIN or HQ_MANAGER looking at a specific branch layout context view, filter by the path URL parameter
+      // Global roles filter by what was requested in the URL path
       queryConditions.branchId = pathBranchId;
     }
 
-    // Pull filtered records safely from Neon DB
     const staff = await prisma.user.findMany({
       where: queryConditions,
       select: {
@@ -85,15 +86,66 @@ router.get('/:branchId/employees', verifyToken, requireRole(['BRANCH_MANAGER', '
         role: true,
         branchId: true,
         isActive: true
-        // Exclude sensitive hashed password payload fields from traveling over public production networks
       },
       orderBy: { name: 'asc' }
     });
 
     res.json(staff);
   } catch (error) {
-    console.error("Secure personnel roster database streaming query crash: ", error);
+    console.error("Roster retrieval crash:", error);
     res.status(500).json({ error: "Internal server registry error processing data streaming." });
+  }
+});
+
+
+// =========================================================================
+// DELETE /api/branches/:branchId/employees/:id
+// ✅ FIXED: Safely validates deletion constraints without crashing with a 500 error
+// =========================================================================
+router.delete('/:branchId/employees/:id', verifyToken, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_MANAGER']), async (req: any, res: any) => {
+  const targetEmployeeId = parseInt(req.params.id, 10);
+  
+  if (isNaN(targetEmployeeId)) {
+    return res.status(400).json({ error: 'Valid integer employee account identifier parameter required.' });
+  }
+
+  try {
+    // 1. Fetch the active caller details directly from the database
+    const callingUser = await prisma.user.findUnique({
+      where: { id: req.user.id }
+    });
+
+    if (!callingUser) {
+      return res.status(401).json({ error: 'Unauthorized: Session user context missing.' });
+    }
+
+    // 2. Fetch the target user profile from the database
+    const targetUser = await prisma.user.findUnique({
+      where: { id: targetEmployeeId }
+    });
+
+    if (!targetUser) {
+      return res.status(404).json({ error: 'The requested employee contract profile could not be located.' });
+    }
+
+    // 3. Enforce dynamic multi-tenant branch ownership validation bounds
+    if (callingUser.role === 'BRANCH_MANAGER') {
+      if (!callingUser.branchId || targetUser.branchId !== callingUser.branchId) {
+        return res.status(403).json({ 
+          error: 'Security Authorization Fault: You are restricted from managing personnel belonging to other locations.' 
+        });
+      }
+    }
+
+    // 4. Everything matches! Safe to execute database delete transaction
+    await prisma.user.delete({
+      where: { id: targetEmployeeId }
+    });
+
+    res.json({ message: 'Personnel contract registry profile destroyed successfully.' });
+  } catch (error) {
+    console.error("Secure personnel deletion crash: ", error);
+    res.status(500).json({ error: "Internal server registry error processing account eviction." });
   }
 });
 
