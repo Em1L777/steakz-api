@@ -23,6 +23,7 @@ const port = process.env['PORT'] || 3001;
 // Resolve __dirname under ES Modules environment parameters cleanly
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const allowedOrigin = process.env.FRONTEND_URL || 'http://localhost:5173';
 
 // 📁 Automatically construct local upload paths if they do not exist to block startup filesystem faults
 const uploadDir = path.join(__dirname, '../public/uploads/dishes');
@@ -30,10 +31,10 @@ if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
 
-// CORS configuration to explicitly allow cross-origin traffic from your React development server
+// CORS configuration supporting dynamic validation for both local workspace setups and remote domains
 app.use(cors({
-  origin: 'http://localhost:5173', // Your frontend Vite port
-  credentials: true                // Required for tokens/cookies to pass through
+  origin: allowedOrigin,
+  credentials: true
 }));
 
 app.use(express.json());
