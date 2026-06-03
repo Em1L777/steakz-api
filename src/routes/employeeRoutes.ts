@@ -44,46 +44,56 @@ const branchId = rawBranchId ? parseInt(rawBranchId as string, 10) : undefined;
 });
 
 // =========================================================================
-// DELETE /api/branches/:branchId/employees/:id
-// ✅ SECURE: Prevents Branch Managers from deleting cross-branch personnel accounts
+// GET /api/branches/:branchId/employees
+// ✅ SECURE: Filters employee visibility by branch for local Branch Managers
 // =========================================================================
-router.delete('/:branchId/employees/:id', verifyToken, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_MANAGER']), async (req: any, res: any) => {
-  const targetEmployeeId = parseInt(req.params.id, 10);
-  
-  if (isNaN(targetEmployeeId)) {
-    return res.status(400).json({ error: 'Valid integer employee account identifier parameter required.' });
+router.get('/:branchId/employees', verifyToken, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_MANAGER']), async (req: any, res: any) => {
+  const pathBranchId = parseInt(req.params.branchId, 10);
+
+  if (isNaN(pathBranchId)) {
+    return res.status(400).json({ error: 'Valid integer branch identification parameter required.' });
   }
 
   try {
-    // 1. Fetch the target user profile from the database to inspect branch location assignment
-    const targetUser = await prisma.user.findUnique({
-      where: { id: targetEmployeeId }
-    });
-
-    if (!targetUser) {
-      return res.status(404).json({ error: 'The requested employee contract profile could not be located.' });
+    // 🛡️ Multi-Tenant Guard Rule:
+    // If the active user session is a local BRANCH_MANAGER, they are strict-locked
+    // to viewing ONLY their own parameter target branch matching coordinates.
+    if (req.user.role === 'BRANCH_MANAGER' && req.user.branchId !== pathBranchId) {
+      return res.status(403).json({ 
+        error: 'Security Authorization Fault: You are restricted from accessing personnel rosters outside your local store scope.' 
+      });
     }
 
-    // 2. Enforce strict location boundaries if the request comes from a local Branch Manager
+    // Build conditional query constraints matrix blocks
+    const queryConditions: any = {};
+
+    // 1. If a BRANCH_MANAGER makes the call, limit the database rows matching their specific location code
     if (req.user.role === 'BRANCH_MANAGER') {
-      const managerBranchId = req.user.branchId;
-
-      if (!managerBranchId || targetUser.branchId !== managerBranchId) {
-        return res.status(403).json({ 
-          error: 'Security Authorization Fault: You are restricted from managing personnel belonging to other location registries.' 
-        });
-      }
+      queryConditions.branchId = req.user.branchId;
+    } else {
+      // 2. If it is an ADMIN or HQ_MANAGER looking at a specific branch layout context view, filter by the path URL parameter
+      queryConditions.branchId = pathBranchId;
     }
 
-    // 3. Authorization check complete -> execute deletion transaction safely
-    await prisma.user.delete({
-      where: { id: targetEmployeeId }
+    // Pull filtered records safely from Neon DB
+    const staff = await prisma.user.findMany({
+      where: queryConditions,
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        branchId: true,
+        isActive: true
+        // Exclude sensitive hashed password payload fields from traveling over public production networks
+      },
+      orderBy: { name: 'asc' }
     });
 
-    res.json({ message: 'Personnel contract registry profile destroyed successfully.' });
+    res.json(staff);
   } catch (error) {
-    console.error("Secure personnel eviction database transaction crash: ", error);
-    res.status(500).json({ error: "Internal server registry error processing account eviction." });
+    console.error("Secure personnel roster database streaming query crash: ", error);
+    res.status(500).json({ error: "Internal server registry error processing data streaming." });
   }
 });
 
