@@ -73,8 +73,16 @@ if (userRole === 'WAITER') {
 // ✅ NEW WORKFLOW ACTION: PATCH /api/branches/:branchId/reservations/:id/arrive
 // Exclusively updates a reservation's state to "arrived" when triggered by floor staff
 router.patch('/:id/arrive', verifyToken, branchLock, requireRole(['WAITER']), async (req: Request, res: Response) => {
-    const rawId = Array.isArray(req.query.id) ? req.query.id[0] : req.query.id;
+  
+  // ✅ FIX: Prioritize req.params.id from the URL path parameter mapping definition,
+  // falling back to query strings if necessary to maintain complete backwards compatibility.
+  const rawId = req.params.id || (Array.isArray(req.query.id) ? req.query.id[0] : req.query.id);
   const id = rawId ? parseInt(rawId as string, 10) : undefined;
+
+  if (!id || isNaN(id)) {
+    res.status(400).json({ error: 'A valid reservation identifier parameter is required.' });
+    return;
+  }
 
   try {
     const targetReservation = await prisma.reservation.findUnique({ where: { id } });
@@ -93,6 +101,7 @@ router.patch('/:id/arrive', verifyToken, branchLock, requireRole(['WAITER']), as
 
     res.json({ message: 'Customer marked as arrived successfully.', reservation: updated });
   } catch (error) {
+    console.error('Database lifestyle transition crash trace:', error);
     res.status(500).json({ error: 'Internal server error processing lifestyle status transition.' });
   }
 });
