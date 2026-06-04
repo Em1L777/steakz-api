@@ -7,17 +7,19 @@ import { branchLock } from '../middleware/branchLock.js';
 
 const router = Router({ mergeParams: true });
 
-// POST /api/branches/:branchId/employees — Hierarchical local staffing hiring
-router.post('/:branchId/employees', verifyToken, branchLock, requireRole(['BRANCH_MANAGER']), async (req: Request, res: Response) => {
+// =========================================================================
+// 🔒 POST: Hierarchical local staffing hiring
+// URL: POST /api/branches/:branchId/employees
+// =========================================================================
+router.post('/:branchId/employees', verifyToken, branchLock, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_MANAGER']), async (req: Request, res: Response) => {
   const params = req.params as { branchId: string };
-  const rawBranchId = Array.isArray(req.query.branchId) 
-  ? req.query.branchId[0] 
-  : req.query.branchId;
+  const pathBranchId = parseInt(params.branchId, 10);
 
-// 2. Convert it to a number (or leave it undefined if it wasn't provided)
-const branchId = rawBranchId ? parseInt(rawBranchId as string, 10) : undefined;
-  
-  // Clean, compliant destructured type assertion assignment
+  if (isNaN(pathBranchId)) {
+    res.status(400).json({ error: 'Valid integer branch identification parameter required.' });
+    return;
+  }
+
   const { name, email, password, role } = req.body;
 
   if (!name || !email || !password || !role) {
@@ -28,13 +30,21 @@ const branchId = rawBranchId ? parseInt(rawBranchId as string, 10) : undefined;
   try {
     const hashedPassword = await bcrypt.hash(password, 10);
 
+    // Multi-tenant Force Injection: Ensure Branch Managers can only bind to their own branch
+    const targetBranchId = req.user?.role === 'BRANCH_MANAGER' ? req.user.branchId : pathBranchId;
+
+    if (!targetBranchId) {
+      res.status(400).json({ error: 'Cannot assign employee to a null branch destination node.' });
+      return;
+    }
+
     const employee = await prisma.user.create({
       data: { 
         name, 
         email, 
         password: hashedPassword, 
         role, 
-        branchId // Links the worker directly to the manager's active store scope
+        branchId: targetBranchId // Securely binds the user record
       }
     });
 
@@ -48,7 +58,7 @@ const branchId = rawBranchId ? parseInt(rawBranchId as string, 10) : undefined;
 // 🔓 GET: Fetch & Filter Employee Roster
 // URL: GET /api/branches/:branchId/employees
 // =========================================================================
-router.get('/', verifyToken, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_MANAGER']), async (req: Request, res: Response) => {
+router.get('/:branchId/employees', verifyToken, branchLock, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_MANAGER']), async (req: Request, res: Response) => {
   const params = req.params as { branchId: string };
   const pathBranchId = parseInt(params.branchId, 10);
 
@@ -60,12 +70,9 @@ router.get('/', verifyToken, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_MANAGER
   try {
     const queryConditions: any = {};
 
-    // Strict Multi-Tenant Enforcement:
-    // If user is a BRANCH_MANAGER, they can only view employees in their assigned branch ID
     if (req.user?.role === 'BRANCH_MANAGER') {
       queryConditions.branchId = req.user.branchId;
     } else {
-      // ADMIN or HQ_MANAGER can inspect whatever branch is passed into the URL path
       queryConditions.branchId = pathBranchId;
     }
 
@@ -93,9 +100,8 @@ router.get('/', verifyToken, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_MANAGER
 // 🔒 DELETE: Securely Terminate Personnel Account Profiles
 // URL: DELETE /api/branches/:branchId/employees/:id
 // =========================================================================
-router.delete('/:id', verifyToken, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_MANAGER']), async (req: Request, res: Response) => {
-  // Read target employee ID straight from the local parameter node
-  const params = req.params as { id: string };
+router.delete('/:branchId/employees/:id', verifyToken, branchLock, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_MANAGER']), async (req: Request, res: Response) => {
+  const params = req.params as { branchId: string; id: string };
   const targetEmployeeId = parseInt(params.id, 10);
 
   if (isNaN(targetEmployeeId)) {
@@ -104,7 +110,6 @@ router.delete('/:id', verifyToken, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_M
   }
 
   try {
-    // 1. Look up target profile from Neon DB to check its branch assignment
     const targetUser = await prisma.user.findUnique({
       where: { id: targetEmployeeId }
     });
@@ -114,7 +119,6 @@ router.delete('/:id', verifyToken, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_M
       return;
     }
 
-    // 2. Multi-Tenant Check: If the caller is a Branch Manager, enforce matching branchIds
     if (req.user?.role === 'BRANCH_MANAGER') {
       if (targetUser.branchId !== req.user.branchId) {
         res.status(403).json({ error: 'Forbidden: You cannot delete personnel belonging to other branches.' });
@@ -122,7 +126,12 @@ router.delete('/:id', verifyToken, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_M
       }
     }
 
-    // 3. Clear authorization checks -> Execute deletion transaction safely
+    // Prevent Self-Deletion Safety Guard
+    if (req.user?.id === targetEmployeeId) {
+      res.status(400).json({ error: 'Security constraint violation: Deletion of currently logged-in account profiles rejected.' });
+      return;
+    }
+
     await prisma.user.delete({
       where: { id: targetEmployeeId }
     });
@@ -130,7 +139,7 @@ router.delete('/:id', verifyToken, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_M
     res.json({ message: 'Personnel profile destroyed successfully.' });
   } catch (error) {
     console.error("Secure personnel deletion transaction crash:", error);
-    res.status(500).json({ error: "Internal server error processing account deletion." });
+    res.status(500).json({ error: "Internal server error processing account deletion. Check record relational references." });
   }
 });
 
