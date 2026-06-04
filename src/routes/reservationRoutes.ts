@@ -8,33 +8,37 @@ const router = Router({ mergeParams: true });
 
 // POST /api/branches/:branchId/reservations (Public / Guest Booking Creation)
 router.post('/', async (req: Request, res: Response) => {
-  const branchId = parseInt(req.params['branchId'] as string || '0', 10);
-  const { customerName, customerContact, tableNumber, reservedFor } = req.body as {
-    customerName?: string; customerContact?: string; tableNumber?: number; reservedFor?: string;
-  };
+  const { branchId } = req.params as { branchId: string };
+  // ✅ EXTRACT notes alongside the existing reservation fields
+  const { customerName, customerContact, tableNumber, reservedFor, notes } = req.body;
 
-  if (!customerName || !customerContact || !tableNumber || !reservedFor) {
-    res.status(400).json({ error: 'Customer name, contact info, table number, and reservation time are required.' });
+  const numericBranchId = parseInt(branchId, 10);
+  if (isNaN(numericBranchId)) {
+    res.status(400).json({ error: 'Valid integer branch path configuration required.' });
     return;
   }
 
-  const ISOdateTime = new Date(reservedFor);
-  const conflict = await prisma.reservation.findFirst({
-    where: { branchId, tableNumber, reservedFor: ISOdateTime, status: 'active' }
-  });
-
-  if (conflict) {
-    res.status(409).json({ error: 'This specific table is already reserved for the requested slot.' });
+  if (!customerName || !customerContact || !tableNumber || !reservedFor) {
+    res.status(400).json({ error: 'Core client booking validation credentials missing.' });
     return;
   }
 
   try {
     const reservation = await prisma.reservation.create({
-      data: { customerName, customerContact, tableNumber, reservedFor: ISOdateTime, branchId, status: 'active' }
+      data: {
+        customerName,
+        customerContact,
+        tableNumber: parseInt(tableNumber, 10),
+        reservedFor: new Date(reservedFor),
+        branchId: numericBranchId,
+        notes: notes ? String(notes).trim() : null // ✅ SAVE notes safely to Neon
+      }
     });
-    res.status(201).json({ message: 'Reservation created successfully.', reservation });
+
+    res.status(201).json(reservation);
   } catch (error) {
-    res.status(500).json({ error: 'Internal server error processing reservation.' });
+    console.error("Booking generation structural fault:", error);
+    res.status(500).json({ error: 'Internal server fault writing reservation register.' });
   }
 });
 
