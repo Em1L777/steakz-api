@@ -129,8 +129,17 @@ router.post('/', verifyToken, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_MANAGE
 
     console.log(`✅ SUCCESS: Onboarded ${employee.role} "${employee.name}" to branch ${employee.branchId}`);
     res.status(201).json({ message: 'Hiring onboarding sequence complete.', id: employee.id });
-  } catch (error) {
-    console.error("❌ Secure employee creation error:", error);
+  } catch (rawError: any) {
+    
+    // =========================================================================
+    // 📊 CRITICAL ONBOARDING DIAGNOSTIC LOGS
+    // =========================================================================
+    const error = rawError as any;
+    console.log("==================== ONBOARDING ERROR INSPECTOR ====================");
+    console.error("❌ ERROR CODE/TYPE:", error?.code || "No specific Prisma code");
+    console.error("❌ RAW ERROR MESSAGE:", error?.message || error);
+    console.error("❌ SUBMITTED PAYLOAD:", { name, email, role, pathBranchId });
+    console.log("====================================================================");
     res.status(409).json({ error: 'Could not complete onboarding. Email may already be registered or structure is invalid.' });
   }
 });
