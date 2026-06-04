@@ -66,7 +66,7 @@ router.get('/', verifyToken, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_MANAGER
 // 🔒 POST: Provision Employee profile with absolute validation mapping
 // Mounted Target: POST /api/branches/:branchId/employees
 // =========================================================================
-router.post('/:id?', verifyToken, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_MANAGER']), async (req: Request, res: Response) => {
+router.post(['/', '/:id'], verifyToken, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_MANAGER']), async (req: Request, res: Response) => {
   const { branchId } = req.params as { branchId: string };
   const pathBranchId = parseInt(branchId, 10);
   const { name, email, password, role } = req.body;
