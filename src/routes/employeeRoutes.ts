@@ -7,7 +7,8 @@ import { verifyToken, requireRole } from '../middleware/auth.js';
 const router = Router({ mergeParams: true });
 
 // =========================================================================
-// 🔓 GET: Fetch Local Staff Only (Filters out Admins & Null Branches)
+// 🔓 GET: Fetch Local Staff Only (Absolute Multi-Tenant Role & Type Isolation)
+// Mounted Target: GET /api/branches/:branchId/employees
 // =========================================================================
 router.get('/', verifyToken, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_MANAGER']), async (req: Request, res: Response) => {
   const { branchId } = req.params as { branchId: string };
@@ -19,18 +20,44 @@ router.get('/', verifyToken, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_MANAGER
   }
 
   try {
+    // 1. Cleanly extract the structured user ID from the typing object wrapper
+    const tokenUserId = req.user?.id;
+
+    if (!tokenUserId) {
+      res.status(401).json({ error: 'Unauthorized: Session authentication parameters missing.' });
+      return;
+    }
+
+    // 2. Fetch a fresh, trusted copy of the calling user from the database
+    const dbUser = await prisma.user.findUnique({
+      where: { id: tokenUserId }
+    });
+
+    if (!dbUser) {
+      res.status(401).json({ error: 'Unauthorized: Profile registry entry mismatch.' });
+      return;
+    }
+
     const queryConditions: any = {};
 
-    if (req.user?.role === 'BRANCH_MANAGER') {
-      // Force isolation to the logged-in manager's specific branch
-      queryConditions.branchId = req.user.branchId;
-      // Filter strictly to CHEF and WAITER roles to hide corporate accounts
+    // 3. Apply explicit, strict type-forced isolation rules
+    if (dbUser.role === 'BRANCH_MANAGER') {
+      const confirmedManagerBranchId = typeof dbUser.branchId === 'string' ? parseInt(dbUser.branchId, 10) : dbUser.branchId;
+
+      if (!confirmedManagerBranchId) {
+        res.status(403).json({ error: 'Forbidden: Current manager profile is unassigned to any operating branch.' });
+        return;
+      }
+
+      // Enforce absolute strict query parameters match
+      queryConditions.branchId = confirmedManagerBranchId;
       queryConditions.role = { in: ['CHEF', 'WAITER'] };
     } else {
-      // ADMIN or HQ_MANAGER see the targeted branch scope
+      // ADMIN or HQ_MANAGER can inspect the target path resource parameter branch
       queryConditions.branchId = pathBranchId;
     }
 
+    // 4. Fire the absolute database call
     const staff = await prisma.user.findMany({
       where: queryConditions,
       select: {
@@ -46,13 +73,14 @@ router.get('/', verifyToken, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_MANAGER
 
     res.json(staff);
   } catch (error) {
-    console.error("Secure roster fetch error:", error);
+    console.error("Secure roster fetch fatal crash loop:", error);
     res.status(500).json({ error: "Internal server error fetching personnel roster." });
   }
 });
 
 // =========================================================================
-// 🔒 POST: Create User & Inherit Manager's branchId
+// 🔒 POST: Provision Employee profile with absolute validation mapping
+// Mounted Target: POST /api/branches/:branchId/employees
 // =========================================================================
 router.post('/', verifyToken, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_MANAGER']), async (req: Request, res: Response) => {
   const { branchId } = req.params as { branchId: string };
@@ -70,13 +98,29 @@ router.post('/', verifyToken, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_MANAGE
   }
 
   try {
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const determinedBranchId = req.user?.role === 'BRANCH_MANAGER' ? req.user.branchId : pathBranchId;
+    const tokenUserId = req.user?.id;
+    if (!tokenUserId) {
+      res.status(401).json({ error: 'Unauthorized: Missing verification context.' });
+      return;
+    }
 
-    if (!determinedBranchId) {
+    const dbUser = await prisma.user.findUnique({
+      where: { id: tokenUserId }
+    });
+
+    if (!dbUser) {
+      res.status(401).json({ error: 'Unauthorized: Execution profile not found.' });
+      return;
+    }
+
+    const confirmedBranchId = dbUser.role === 'BRANCH_MANAGER' ? dbUser.branchId : pathBranchId;
+
+    if (!confirmedBranchId) {
       res.status(400).json({ error: 'Cannot provision a profile with unassigned or null branch headers.' });
       return;
     }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
 
     const employee = await prisma.user.create({
       data: { 
@@ -84,7 +128,7 @@ router.post('/', verifyToken, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_MANAGE
         email, 
         password: hashedPassword, 
         role, 
-        branchId: determinedBranchId
+        branchId: typeof confirmedBranchId === 'string' ? parseInt(confirmedBranchId, 10) : confirmedBranchId
       }
     });
 
@@ -96,7 +140,8 @@ router.post('/', verifyToken, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_MANAGE
 });
 
 // =========================================================================
-// 🔒 DELETE: Securely Terminate Personnel Accounts (Fixes 500 error)
+// 🔒 DELETE: Securely Terminate Personnel Account Profiles
+// Mounted Target: DELETE /api/branches/:branchId/employees/:id
 // =========================================================================
 router.delete('/:id', verifyToken, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_MANAGER']), async (req: Request, res: Response) => {
   const { branchId, id } = req.params as { branchId: string; id: string };
@@ -109,6 +154,16 @@ router.delete('/:id', verifyToken, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_M
   }
 
   try {
+    const tokenUserId = req.user?.id;
+    if (!tokenUserId) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+
+    const dbUser = await prisma.user.findUnique({
+      where: { id: tokenUserId }
+    });
+
     const targetUser = await prisma.user.findUnique({
       where: { id: targetEmployeeId }
     });
@@ -118,14 +173,14 @@ router.delete('/:id', verifyToken, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_M
       return;
     }
 
-    if (req.user?.role === 'BRANCH_MANAGER') {
-      if (!targetUser.branchId || targetUser.branchId !== req.user.branchId) {
+    if (dbUser && dbUser.role === 'BRANCH_MANAGER') {
+      if (!targetUser.branchId || targetUser.branchId !== dbUser.branchId) {
         res.status(403).json({ error: 'Forbidden: Isolation rule prevents dropping alternative location users.' });
         return;
       }
     }
 
-    if (req.user?.id === targetEmployeeId) {
+    if (dbUser && dbUser.id === targetEmployeeId) {
       res.status(400).json({ error: 'Operation rejected: You cannot delete your own logged-in session profile.' });
       return;
     }
