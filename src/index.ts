@@ -11,7 +11,7 @@ import branchRoutes       from './routes/branchRoutes.js';
 import orderRoutes        from './routes/orderRoutes.js';
 import inventoryRoutes    from './routes/inventoryRoutes.js';
 import deliveryRoutes     from './routes/deliveryRoutes.js';
-import employeeRoutes     from './routes/employeeRoutes.js';
+import employeeRoutes     from './routes/employeeRoutes.js'; // Our verified file!
 import reportRoutes       from './routes/reportRoutes.js';
 import reservationRoutes  from './routes/reservationRoutes.js';
 import hqReportRoutes     from './routes/hqReportRoutes.js';
@@ -45,19 +45,24 @@ app.use(requestLogger);
 app.use('/uploads', express.static(path.join(__dirname, '../public/uploads')));
 
 // =========================================================================
-// 🔄 ROUTE MOUNTING REGISTER
+// 🔄 ROUTE MOUNTING REGISTER 
 // =========================================================================
+
+// 1. Static global API routes
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
-app.use('/api/branches', branchRoutes);
 app.use('/api/hq/reports', hqReportRoutes);
 
+// 2. CRITICAL: Mount specific sub-routes FIRST so they don't get swallowed
+app.use('/api/branches/:branchId/employees', employeeRoutes); // ⭐ MOUNTED CLEARLY AT THE TOP
 app.use('/api/branches/:branchId/reports', reportRoutes);
 app.use('/api/branches/:branchId/inventory', inventoryRoutes);  
 app.use('/api/branches/:branchId/orders', orderRoutes);        
 app.use('/api/branches/:branchId/deliveries', deliveryRoutes);  
-app.use('/api/branches/:branchId/employees', employeeRoutes);   
 app.use('/api/branches/:branchId/reservations', reservationRoutes); 
+
+// 3. Generic branch routes must be placed LAST
+app.use('/api/branches', branchRoutes);
 
 app.listen(port, () => {
   console.log(`[STABLE RUNTIME] Steakz Grill Ecosystem online on port: ${port}`);
