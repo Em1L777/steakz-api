@@ -12,7 +12,9 @@ const router = Router();
 // URL: GET /api/branches/:branchId/employees
 // =========================================================================
 router.get('/:branchId/employees', verifyToken, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_MANAGER']), async (req: Request, res: Response) => {
-  const pathBranchId = parseInt(req.params.branchId, 10);
+  // Use a type assertion to guarantee these are strings to TypeScript
+  const { branchId } = req.params as { branchId: string };
+  const pathBranchId = parseInt(branchId, 10);
 
   if (isNaN(pathBranchId)) {
     res.status(400).json({ error: 'Valid integer branch identification parameter required.' });
@@ -22,15 +24,11 @@ router.get('/:branchId/employees', verifyToken, requireRole(['BRANCH_MANAGER', '
   try {
     const queryConditions: any = {};
 
-    // 1. Strict Multi-Tenant Isolation & Role Filtering
     if (req.user?.role === 'BRANCH_MANAGER') {
       queryConditions.branchId = req.user.branchId;
-      
-      // 🛡️ CRITICAL FIX: Ensure Branch Managers ONLY see staff roles (CHEF/WAITER)
-      // They will no longer see themselves or other administrative profiles.
+      // Limits Kai Stone to seeing only CHEFs and WAITERs
       queryConditions.role = { in: ['CHEF', 'WAITER'] };
     } else {
-      // ADMIN or HQ_MANAGER can inspect whatever branch is passed into the URL path
       queryConditions.branchId = pathBranchId;
     }
 
@@ -59,7 +57,8 @@ router.get('/:branchId/employees', verifyToken, requireRole(['BRANCH_MANAGER', '
 // URL: POST /api/branches/:branchId/employees
 // =========================================================================
 router.post('/:branchId/employees', verifyToken, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_MANAGER']), async (req: Request, res: Response) => {
-  const pathBranchId = parseInt(req.params.branchId, 10);
+  const { branchId } = req.params as { branchId: string };
+  const pathBranchId = parseInt(branchId, 10);
   const { name, email, password, role } = req.body;
 
   if (isNaN(pathBranchId)) {
@@ -74,8 +73,6 @@ router.post('/:branchId/employees', verifyToken, requireRole(['BRANCH_MANAGER', 
 
   try {
     const hashedPassword = await bcrypt.hash(password, 10);
-
-    // Force inheritance: Branch Managers can only create users inside their own branch context
     const determinedBranchId = req.user?.role === 'BRANCH_MANAGER' ? req.user.branchId : pathBranchId;
 
     if (!determinedBranchId) {
@@ -89,7 +86,7 @@ router.post('/:branchId/employees', verifyToken, requireRole(['BRANCH_MANAGER', 
         email, 
         password: hashedPassword, 
         role, 
-        branchId: determinedBranchId // Guaranteed inheritance
+        branchId: determinedBranchId
       }
     });
 
@@ -104,8 +101,9 @@ router.post('/:branchId/employees', verifyToken, requireRole(['BRANCH_MANAGER', 
 // URL: DELETE /api/branches/:branchId/employees/:id
 // =========================================================================
 router.delete('/:branchId/employees/:id', verifyToken, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_MANAGER']), async (req: Request, res: Response) => {
-  const pathBranchId = parseInt(req.params.branchId, 10);
-  const targetEmployeeId = parseInt(req.params.id, 10);
+  const { branchId, id } = req.params as { branchId: string; id: string };
+  const pathBranchId = parseInt(branchId, 10);
+  const targetEmployeeId = parseInt(id, 10);
 
   if (isNaN(pathBranchId) || isNaN(targetEmployeeId)) {
     res.status(400).json({ error: 'Valid integer parameter nodes required.' });
