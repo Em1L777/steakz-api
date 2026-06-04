@@ -14,67 +14,51 @@ router.get('/', verifyToken, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_MANAGER
   const { branchId } = req.params as { branchId: string };
   const pathBranchId = parseInt(branchId, 10);
 
-  if (isNaN(pathBranchId)) {
-    res.status(400).json({ error: 'Valid integer branch identification parameter required.' });
-    return;
-  }
-
   try {
-    // 1. Cleanly extract the structured user ID from the typing object wrapper
     const tokenUserId = req.user?.id;
-
     if (!tokenUserId) {
-      res.status(401).json({ error: 'Unauthorized: Session authentication parameters missing.' });
+      res.status(401).json({ error: 'Unauthorized: Session identification missing.' });
       return;
     }
 
-    // 2. Fetch a fresh, trusted copy of the calling user from the database
-    const dbUser = await prisma.user.findUnique({
-      where: { id: tokenUserId }
-    });
-
+    const dbUser = await prisma.user.findUnique({ where: { id: tokenUserId } });
     if (!dbUser) {
-      res.status(401).json({ error: 'Unauthorized: Profile registry entry mismatch.' });
+      res.status(401).json({ error: 'Unauthorized: User missing from database.' });
       return;
     }
+
+    // =========================================================================
+    // 📊 CRITICAL RUNTIME DIAGNOSTIC LOGS
+    // =========================================================================
+    console.log("==================== BACKEND INSPECTOR ====================");
+    console.log(`▶️ CURRENT LOGGED-IN USER ID:`, dbUser.id);
+    console.log(`▶️ DETECTED ROLE IN DB:      "${dbUser.role}"`);
+    console.log(`▶️ DETECTED MANAGER BRANCH:  `, dbUser.branchId);
+    console.log(`▶️ URL PARAMETER BRANCH ID:  `, pathBranchId);
+    console.log("===========================================================");
 
     const queryConditions: any = {};
 
-    // 3. Apply explicit, strict type-forced isolation rules
-    if (dbUser.role === 'BRANCH_MANAGER') {
-      const confirmedManagerBranchId = typeof dbUser.branchId === 'string' ? parseInt(dbUser.branchId, 10) : dbUser.branchId;
-
-      if (!confirmedManagerBranchId) {
-        res.status(403).json({ error: 'Forbidden: Current manager profile is unassigned to any operating branch.' });
-        return;
-      }
-
-      // Enforce absolute strict query parameters match
-      queryConditions.branchId = confirmedManagerBranchId;
+    // Explicit check to bypass any string wrapping issues
+    if (String(dbUser.role).trim() === 'BRANCH_MANAGER') {
+      console.log("🎯 MATCHED CONDITION: Running Branch Manager filtering logic!");
+      queryConditions.branchId = dbUser.branchId;
       queryConditions.role = { in: ['CHEF', 'WAITER'] };
     } else {
-      // ADMIN or HQ_MANAGER can inspect the target path resource parameter branch
+      console.log("⚠️ MATCHED CONDITION: User is not seen as a Branch Manager. Falling back to Admin/HQ view!");
       queryConditions.branchId = pathBranchId;
     }
 
-    // 4. Fire the absolute database call
     const staff = await prisma.user.findMany({
       where: queryConditions,
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        role: true,
-        branchId: true,
-        isActive: true
-      },
+      select: { id: true, name: true, email: true, role: true, branchId: true, isActive: true },
       orderBy: { name: 'asc' }
     });
 
     res.json(staff);
   } catch (error) {
-    console.error("Secure roster fetch fatal crash loop:", error);
-    res.status(500).json({ error: "Internal server error fetching personnel roster." });
+    console.error("Fetch error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
