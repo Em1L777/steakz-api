@@ -4,14 +4,14 @@ import bcrypt from 'bcryptjs';
 import prisma from '../lib/prisma.js';
 import { verifyToken, requireRole } from '../middleware/auth.js';
 
-// By using absolute paths below, we stop relying on how app.use handles parameters
-const router = Router();
+// Crucial: mergeParams preserves :branchId from parent routes in index.ts
+const router = Router({ mergeParams: true });
 
 // =========================================================================
-// 🔓 GET: Fetch & Filter Local Staff Only (Multi-Tenant Forced Filter)
+// 🔓 GET: Fetch & Filter Local Staff (Enforces Branch and Role Strictness)
 // URL Target: GET /api/branches/:branchId/employees
 // =========================================================================
-router.get('/branches/:branchId/employees', verifyToken, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_MANAGER']), async (req: Request, res: Response) => {
+router.get('/', verifyToken, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_MANAGER']), async (req: Request, res: Response) => {
   const { branchId } = req.params as { branchId: string };
   const pathBranchId = parseInt(branchId, 10);
 
@@ -24,13 +24,14 @@ router.get('/branches/:branchId/employees', verifyToken, requireRole(['BRANCH_MA
     const queryConditions: any = {};
 
     if (req.user?.role === 'BRANCH_MANAGER') {
-      // Force the Branch Manager to ONLY query their own assigned location row
+      // 1. Force the Branch Manager to ONLY see records matching their own branch
       queryConditions.branchId = req.user.branchId;
-      // 🛡️ CRITICAL VISIBILITY FIX: Only return true local workers (CHEF & WAITER)
-      // This immediately filters out Admins, HQ Managers, and other global profiles!
+      
+      // 2. CRITICAL VISIBILITY FIX: Only return true local staff (CHEF & WAITER)
+      // This shields out admins, other branch managers, and any global profiles with NULL branches!
       queryConditions.role = { in: ['CHEF', 'WAITER'] };
     } else {
-      // Admins and HQ Managers can see all roles within the targeted path branch
+      // ADMIN or HQ_MANAGER can inspect whatever branch is passed into the URL path
       queryConditions.branchId = pathBranchId;
     }
 
@@ -55,10 +56,10 @@ router.get('/branches/:branchId/employees', verifyToken, requireRole(['BRANCH_MA
 });
 
 // =========================================================================
-// 🔒 POST: Provision Employee profile with absolute path assignment
+// 🔒 POST: Provision Employee profile inheriting the Branch Manager's branchId
 // URL Target: POST /api/branches/:branchId/employees
 // =========================================================================
-router.post('/branches/:branchId/employees', verifyToken, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_MANAGER']), async (req: Request, res: Response) => {
+router.post('/', verifyToken, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_MANAGER']), async (req: Request, res: Response) => {
   const { branchId } = req.params as { branchId: string };
   const pathBranchId = parseInt(branchId, 10);
   const { name, email, password, role } = req.body;
@@ -94,15 +95,16 @@ router.post('/branches/:branchId/employees', verifyToken, requireRole(['BRANCH_M
 
     res.status(201).json({ message: 'Hiring onboarding sequence complete.', id: employee.id });
   } catch (error) {
+    console.error("Secure employee creation error:", error);
     res.status(409).json({ error: 'Contract email identity registry overlap collision.' });
   }
 });
 
 // =========================================================================
-// 🔒 DELETE: Clean Deletion Routine Neutralizing the 500 Failure Loop
+// 🔒 DELETE: Securely Terminate Personnel Account Profiles (Fixes 500 error)
 // URL Target: DELETE /api/branches/:branchId/employees/:id
 // =========================================================================
-router.delete('/branches/:branchId/employees/:id', verifyToken, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_MANAGER']), async (req: Request, res: Response) => {
+router.delete('/:id', verifyToken, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_MANAGER']), async (req: Request, res: Response) => {
   const { branchId, id } = req.params as { branchId: string; id: string };
   const pathBranchId = parseInt(branchId, 10);
   const targetEmployeeId = parseInt(id, 10);
@@ -122,7 +124,7 @@ router.delete('/branches/:branchId/employees/:id', verifyToken, requireRole(['BR
       return;
     }
 
-    // Tenant Check: Prevent cross-branch boundary manipulation
+    // Tenant Isolation Check: Block removing employees belonging to other branches or NULL branches
     if (req.user?.role === 'BRANCH_MANAGER') {
       if (!targetUser.branchId || targetUser.branchId !== req.user.branchId) {
         res.status(403).json({ error: 'Forbidden: Isolation rule prevents dropping alternative location users.' });
@@ -130,7 +132,7 @@ router.delete('/branches/:branchId/employees/:id', verifyToken, requireRole(['BR
       }
     }
 
-    // Self lockout safeguard block
+    // Safety Constraint Block: Prevent self-lockouts
     if (req.user?.id === targetEmployeeId) {
       res.status(400).json({ error: 'Operation rejected: You cannot delete your own logged-in session profile.' });
       return;
@@ -144,7 +146,7 @@ router.delete('/branches/:branchId/employees/:id', verifyToken, requireRole(['BR
   } catch (error) {
     console.error("Secure personnel deletion crash log:", error);
     res.status(500).json({ 
-      error: "Internal server error processing account deletion. Verify if this user has active orders attached." 
+      error: "Internal server error processing account deletion. Check record relational references." 
     });
   }
 });
