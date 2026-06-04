@@ -27,25 +27,17 @@ router.get('/', verifyToken, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_MANAGER
       return;
     }
 
-    // =========================================================================
-    // 📊 CRITICAL RUNTIME DIAGNOSTIC LOGS
-    // =========================================================================
-    console.log("==================== BACKEND INSPECTOR ====================");
-    console.log(`▶️ CURRENT LOGGED-IN USER ID:`, dbUser.id);
-    console.log(`▶️ DETECTED ROLE IN DB:      "${dbUser.role}"`);
-    console.log(`▶️ DETECTED MANAGER BRANCH:  `, dbUser.branchId);
-    console.log(`▶️ URL PARAMETER BRANCH ID:  `, pathBranchId);
-    console.log("===========================================================");
+
 
     const queryConditions: any = {};
 
     // Explicit check to bypass any string wrapping issues
     if (String(dbUser.role).trim() === 'BRANCH_MANAGER') {
-      console.log("🎯 MATCHED CONDITION: Running Branch Manager filtering logic!");
+      
       queryConditions.branchId = dbUser.branchId;
       queryConditions.role = { in: ['CHEF', 'WAITER'] };
     } else {
-      console.log("⚠️ MATCHED CONDITION: User is not seen as a Branch Manager. Falling back to Admin/HQ view!");
+      
       queryConditions.branchId = pathBranchId;
     }
 
@@ -131,15 +123,7 @@ router.post(['/', '/:id'], verifyToken, requireRole(['BRANCH_MANAGER', 'ADMIN', 
     res.status(201).json({ message: 'Hiring onboarding sequence complete.', id: employee.id });
   } catch (rawError: any) {
     
-    // =========================================================================
-    // 📊 CRITICAL ONBOARDING DIAGNOSTIC LOGS
-    // =========================================================================
-    const error = rawError as any;
-    console.log("==================== ONBOARDING ERROR INSPECTOR ====================");
-    console.error("❌ ERROR CODE/TYPE:", error?.code || "No specific Prisma code");
-    console.error("❌ RAW ERROR MESSAGE:", error?.message || error);
-    console.error("❌ SUBMITTED PAYLOAD:", { name, email, role, pathBranchId });
-    console.log("====================================================================");
+    console.error("Onboarding error:", rawError);
     res.status(409).json({ error: 'Could not complete onboarding. Email may already be registered or structure is invalid.' });
   }
 });
