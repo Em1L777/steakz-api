@@ -164,4 +164,62 @@ router.put(
   }
 });
 
+// ==========================================================
+// 🔒 SECURE WORKSPACE: DELETE /api/branches/:branchId/inventory/:id
+// ==========================================================
+router.delete(
+  '/:id',
+  verifyToken,
+  branchLock,
+  requireRole(['BRANCH_MANAGER', 'ADMIN']),
+  async (req, res) => {
+    // 1. Cleanly resolve the variable if it comes from an array, string, or query
+    const rawId = Array.isArray(req.params.id) 
+      ? req.params.id[0] 
+      : req.params.id;
+
+    // 2. Fallback to a string to completely satisfy any string-manipulation rules
+    const idStr: string = rawId ? String(rawId).trim() : '';
+
+    // 3. Convert the string into a clean number for Prisma matching
+    const numericId = parseInt(idStr, 10);
+
+    // 4. Validate that the parsing worked and we have a legitimate integer
+    if (!numericId || isNaN(numericId)) {
+      res.status(400).json({ error: 'A valid integer identifier path parameter is required.' });
+      return;
+    }
+
+    try {
+      // Fetch item first using the number to delete its physical image from server disks if it exists
+      const targetItem = await prisma.inventory.findUnique({ 
+        where: { id: numericId } // ✅ FIXED: Uses number now to fix ts(2322)
+      });
+      
+      if (!targetItem) {
+        res.status(404).json({ error: 'Target menu item asset not found in registers.' });
+        return;
+      }
+
+      // If an asset image is bound to this item on disk, clean it up
+      if (targetItem.imageUrl) {
+        const diskPath = path.join(__dirname, '../../public', targetItem.imageUrl);
+        if (fs.existsSync(diskPath)) {
+          fs.unlinkSync(diskPath);
+        }
+      }
+
+      // Execute a safe hard delete on the isolated table record row
+      await prisma.inventory.delete({
+        where: { id: numericId } // ✅ FIXED: Uses number now to fix ts(2322)
+      });
+
+      res.json({ message: 'Menu item asset removed successfully from branch matrix.' });
+    } catch (error) {
+      console.error("Backend item deletion runtime error:", error);
+      res.status(500).json({ error: 'Internal server infrastructure failure removing menu item.' });
+    }
+  }
+);
+
 export default router;
