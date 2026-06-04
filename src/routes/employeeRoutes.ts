@@ -4,15 +4,14 @@ import bcrypt from 'bcryptjs';
 import prisma from '../lib/prisma.js';
 import { verifyToken, requireRole } from '../middleware/auth.js';
 
-// Base initialization with parameter forwarding
+// By using absolute paths below, we stop relying on how app.use handles parameters
 const router = Router();
 
 // =========================================================================
-// 🔓 GET: Fetch & Filter Employee Roster
-// URL: GET /api/branches/:branchId/employees
+// 🔓 GET: Fetch & Filter Local Staff Only (Multi-Tenant Forced Filter)
+// URL Target: GET /api/branches/:branchId/employees
 // =========================================================================
-router.get('/:branchId/employees', verifyToken, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_MANAGER']), async (req: Request, res: Response) => {
-  // Use a type assertion to guarantee these are strings to TypeScript
+router.get('/branches/:branchId/employees', verifyToken, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_MANAGER']), async (req: Request, res: Response) => {
   const { branchId } = req.params as { branchId: string };
   const pathBranchId = parseInt(branchId, 10);
 
@@ -25,10 +24,13 @@ router.get('/:branchId/employees', verifyToken, requireRole(['BRANCH_MANAGER', '
     const queryConditions: any = {};
 
     if (req.user?.role === 'BRANCH_MANAGER') {
+      // Force the Branch Manager to ONLY query their own assigned location row
       queryConditions.branchId = req.user.branchId;
-      // Limits Kai Stone to seeing only CHEFs and WAITERs
+      // 🛡️ CRITICAL VISIBILITY FIX: Only return true local workers (CHEF & WAITER)
+      // This immediately filters out Admins, HQ Managers, and other global profiles!
       queryConditions.role = { in: ['CHEF', 'WAITER'] };
     } else {
+      // Admins and HQ Managers can see all roles within the targeted path branch
       queryConditions.branchId = pathBranchId;
     }
 
@@ -53,10 +55,10 @@ router.get('/:branchId/employees', verifyToken, requireRole(['BRANCH_MANAGER', '
 });
 
 // =========================================================================
-// 🔒 POST: Create User & Force Creator's Tenancy Inheritance
-// URL: POST /api/branches/:branchId/employees
+// 🔒 POST: Provision Employee profile with absolute path assignment
+// URL Target: POST /api/branches/:branchId/employees
 // =========================================================================
-router.post('/:branchId/employees', verifyToken, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_MANAGER']), async (req: Request, res: Response) => {
+router.post('/branches/:branchId/employees', verifyToken, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_MANAGER']), async (req: Request, res: Response) => {
   const { branchId } = req.params as { branchId: string };
   const pathBranchId = parseInt(branchId, 10);
   const { name, email, password, role } = req.body;
@@ -97,16 +99,16 @@ router.post('/:branchId/employees', verifyToken, requireRole(['BRANCH_MANAGER', 
 });
 
 // =========================================================================
-// 🔒 DELETE: Fixed Deletion Strategy Handling NULL profiles & locks cleanly
-// URL: DELETE /api/branches/:branchId/employees/:id
+// 🔒 DELETE: Clean Deletion Routine Neutralizing the 500 Failure Loop
+// URL Target: DELETE /api/branches/:branchId/employees/:id
 // =========================================================================
-router.delete('/:branchId/employees/:id', verifyToken, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_MANAGER']), async (req: Request, res: Response) => {
+router.delete('/branches/:branchId/employees/:id', verifyToken, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_MANAGER']), async (req: Request, res: Response) => {
   const { branchId, id } = req.params as { branchId: string; id: string };
   const pathBranchId = parseInt(branchId, 10);
   const targetEmployeeId = parseInt(id, 10);
 
   if (isNaN(pathBranchId) || isNaN(targetEmployeeId)) {
-    res.status(400).json({ error: 'Valid integer parameter nodes required.' });
+    res.status(400).json({ error: 'Valid integer parameters required.' });
     return;
   }
 
@@ -120,7 +122,7 @@ router.delete('/:branchId/employees/:id', verifyToken, requireRole(['BRANCH_MANA
       return;
     }
 
-    // Tenancy Check: Block Branch Managers from removing employees belonging to other branches or NULL branches
+    // Tenant Check: Prevent cross-branch boundary manipulation
     if (req.user?.role === 'BRANCH_MANAGER') {
       if (!targetUser.branchId || targetUser.branchId !== req.user.branchId) {
         res.status(403).json({ error: 'Forbidden: Isolation rule prevents dropping alternative location users.' });
@@ -128,13 +130,12 @@ router.delete('/:branchId/employees/:id', verifyToken, requireRole(['BRANCH_MANA
       }
     }
 
-    // Safety constraint block: Prevent accidental system self-lockouts
+    // Self lockout safeguard block
     if (req.user?.id === targetEmployeeId) {
       res.status(400).json({ error: 'Operation rejected: You cannot delete your own logged-in session profile.' });
       return;
     }
 
-    // Execute deletion transaction securely
     await prisma.user.delete({
       where: { id: targetEmployeeId }
     });
@@ -143,7 +144,7 @@ router.delete('/:branchId/employees/:id', verifyToken, requireRole(['BRANCH_MANA
   } catch (error) {
     console.error("Secure personnel deletion crash log:", error);
     res.status(500).json({ 
-      error: "Internal server error processing account deletion. This account may be bound to active system tickets or order processing constraints." 
+      error: "Internal server error processing account deletion. Verify if this user has active orders attached." 
     });
   }
 });
