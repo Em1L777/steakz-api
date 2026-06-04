@@ -97,29 +97,41 @@ router.post('/', verifyToken, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_MANAGE
       return;
     }
 
-    const confirmedBranchId = dbUser.role === 'BRANCH_MANAGER' ? dbUser.branchId : pathBranchId;
+    // Determine the branch: Branch Managers automatically assign their own branch, Admins use the path URL
+    const rawBranchId = dbUser.role === 'BRANCH_MANAGER' ? dbUser.branchId : pathBranchId;
 
-    if (!confirmedBranchId) {
+    if (rawBranchId === null || rawBranchId === undefined) {
       res.status(400).json({ error: 'Cannot provision a profile with unassigned or null branch headers.' });
+      return;
+    }
+
+    // Force strict conversion to integer for Prisma's database requirements
+    const finalBranchId = typeof rawBranchId === 'string' ? parseInt(rawBranchId, 10) : rawBranchId;
+
+    if (isNaN(finalBranchId)) {
+      res.status(400).json({ error: 'Resolved branch identifier must be a valid integer.' });
       return;
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
+    // Create the user profile safely
     const employee = await prisma.user.create({
       data: { 
         name, 
         email, 
         password: hashedPassword, 
-        role, 
-        branchId: typeof confirmedBranchId === 'string' ? parseInt(confirmedBranchId, 10) : confirmedBranchId
+        role: String(role).toUpperCase().trim() as any, // Cast the sanitized string directly to 'any' or your custom 'Role' enum type
+        branchId: finalBranchId,
+        isActive: true // Guarantee the profile defaults to active
       }
     });
 
+    console.log(`✅ SUCCESS: Onboarded ${employee.role} "${employee.name}" to branch ${employee.branchId}`);
     res.status(201).json({ message: 'Hiring onboarding sequence complete.', id: employee.id });
   } catch (error) {
-    console.error("Secure employee creation error:", error);
-    res.status(409).json({ error: 'Contract email identity registry overlap collision.' });
+    console.error("❌ Secure employee creation error:", error);
+    res.status(409).json({ error: 'Could not complete onboarding. Email may already be registered or structure is invalid.' });
   }
 });
 
