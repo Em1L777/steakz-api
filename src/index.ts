@@ -16,6 +16,7 @@ import reportRoutes       from './routes/reportRoutes.js';
 import reservationRoutes  from './routes/reservationRoutes.js';
 import hqReportRoutes from './routes/hqReportRoutes.js';
 import { seedAdmin }      from './lib/seed.js';
+import { requireRole, verifyToken } from './middleware/auth.js';
 
 const app  = express();
 const port = process.env['PORT'] || 3001;
@@ -63,7 +64,12 @@ app.use('/api/branches/:branchId/reports', reportRoutes);
 app.use('/api/branches/:branchId/inventory', inventoryRoutes);  
 app.use('/api/branches/:branchId/orders', orderRoutes);        
 app.use('/api/branches/:branchId/deliveries', deliveryRoutes);  
-app.use('/api/branches/:branchId/employees', employeeRoutes);   
+app.get('/api/branches/:branchId/employees', verifyToken, requireRole(['BRANCH_MANAGER', 'ADMIN', 'HQ_MANAGER']), async (req: any, res: any) => {
+  console.log("👉 INDEX.TS OVERRIDE ROUTE HIT SUCCESSFULLY!");
+  
+  // Force it to return an empty array directly from index.ts
+  return res.json([]);
+});  
 app.use('/api/branches/:branchId/reservations', reservationRoutes); 
 
 app.listen(port, () => {
