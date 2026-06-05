@@ -114,9 +114,6 @@ router.get('/users', async (req, res) => {
     const managersAndAdmins = await prisma.user.findMany({
       where: {
         isActive: true, // 👈 ONLY SHOW ACTIVE USERS
-        role: {
-          in: ['ADMIN', 'HQ_MANAGER', 'BRANCH_MANAGER']
-        }
       },
       select: {
         id: true,
