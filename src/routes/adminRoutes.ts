@@ -179,9 +179,7 @@ router.get('/users', async (req, res) => {
     const managersAndAdmins = await prisma.user.findMany({
       // ✅ DATABASE FILTER: Restrict lookup to administrative tiers only
       where: {
-        role: {
-          in: ['ADMIN', 'HQ_MANAGER', 'BRANCH_MANAGER']
-        }
+        isActive: true
       },
       select: {
         id: true,
