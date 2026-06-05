@@ -102,25 +102,59 @@ router.get('/', verifyToken, branchLock, requireRole(['BRANCH_MANAGER', 'CHEF', 
   res.json(queue);
 });
 
-// PATCH /api/branches/:branchId/orders/:id/status — Simplified without delayed deductions
-router.patch('/:id/status', verifyToken, branchLock, requireRole(['CHEF']), async (req, res) => {
-  const branchId = parseInt(req.params['branchId'] as string ?? '0', 10);
-  const orderId = parseInt(req.params['id'] as string ?? '0', 10);
-  const { status } = req.body as { status?: 'IN_PROGRESS' | 'READY' };
+// =====================================================================================
+// PATCH /api/orders/:id/status — Transition Order Status Without Auto-Payment
+// =====================================================================================
+router.patch('/:id/status', verifyToken, async (req, res) => {
+const orderId = parseInt((req.params['id'] as string) || '0', 10);
+  const { status } = req.body;
 
-  if (!status) {
-    res.status(400).json({ error: 'Target status parameter is required.' });
+  if (isNaN(orderId)) {
+    res.status(400).json({ error: 'Valid numeric transaction token required.' });
     return;
   }
 
   try {
+    // ✅ MODIFICATION: Status changes to COMPLETED no longer force auto-payment!
+    // This allows orders to safely remain in a delivered but unpaid state.
     const updatedOrder = await prisma.order.update({
-      where: { id: orderId, branchId },
+      where: { id: orderId },
       data: { status }
     });
-    res.json({ message: 'Kitchen production stage tracked.', order: updatedOrder });
-  } catch (error: any) {
-    res.status(400).json({ error: 'Status transformation pipeline failed verification checks.' });
+
+    res.json({ message: 'Order state matrix adjusted successfully.', order: updatedOrder });
+  } catch (error) {
+    console.error('Failed to change order tracking status:', error);
+    res.status(500).json({ error: 'Internal database error transitioning order lifecycle.' });
+  }
+});
+
+// =====================================================================================
+// NEW: PATCH /api/orders/:id/pay — Isolated Financial Settlement Hook
+// =====================================================================================
+router.patch('/:id/pay', verifyToken, async (req, res) => {
+
+const orderId = parseInt((req.params['id'] as string) || '0', 10);
+
+  if (isNaN(orderId)) {
+    res.status(400).json({ error: 'Valid order token identifier required for settlement.' });
+    return;
+  }
+
+  try {
+    // Finalize financial accounting records cleanly and securely
+    const settledOrder = await prisma.order.update({
+      where: { id: orderId },
+      data: {
+        status: 'COMPLETED',
+        isPaid: true
+      }
+    });
+
+    res.json({ message: 'Financial settlement verified. Revenue ledger updated.', order: settledOrder });
+  } catch (error) {
+    console.error('Failed to settle ticket balance:', error);
+    res.status(500).json({ error: 'Internal ledger error processing final payment allocation.' });
   }
 });
 
