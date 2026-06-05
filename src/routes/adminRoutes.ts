@@ -250,63 +250,6 @@ router.patch('/users/:id/branch', async (req, res) => {
   }
 });
 
-// =====================================================================================
-// GET /api/admin/users — Admin Dashboard Query to fetch ALL Platform Personnel
-// =====================================================================================
-router.get('/users', verifyToken, requireRole(['ADMIN']), async (req, res) => {
-  try {
-    const personnel = await prisma.user.findMany({
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        role: true,
-        isActive: true,
-        branchId: true,
-        createdAt: true,
-        branch: {
-          select: {
-            name: true
-          }
-        }
-      },
-      orderBy: { createdAt: 'desc' }
-    });
-    
-    res.json(personnel);
-  } catch (error) {
-    console.error('Failed to look up platform user records directory:', error);
-    res.status(500).json({ error: 'Internal system fault querying corporate registry.' });
-  }
-});
 
-
-router.delete('/users/:id', verifyToken, requireRole(['ADMIN']), async (req, res) => {
-  // ✅ FIXED: Guarantees a primitive string fallback to satisfy the parseInt requirement and prevent NaN edge cases
-  const targetUserId = parseInt((req.params['id'] as string) || '0', 10);
-
-  if (isNaN(targetUserId) || targetUserId === 0) {
-    res.status(400).json({ error: 'Valid target account user identity parameter is required.' });
-    return;
-  }
-
-  // Self-Deletion Protection Guard
-  if (req.user?.id === targetUserId) {
-    res.status(400).json({ error: 'Administrative Protection Guard: Self-eviction is prohibited.' });
-    return;
-  }
-
-  try {
-    // Perform database deletion. SetNull handles linked tables safely.
-    await prisma.user.delete({
-      where: { id: targetUserId }
-    });
-
-    res.json({ message: 'User record permanently scrubbed from the corporate register.' });
-  } catch (error: any) {
-    console.error(`Failed to delete user account ID ${targetUserId}:`, error);
-    res.status(500).json({ error: 'Failed to complete account eviction. User does not exist or matches active session locks.' });
-  }
-});
 
 export default router;
