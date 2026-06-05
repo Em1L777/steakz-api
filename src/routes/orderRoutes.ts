@@ -96,7 +96,13 @@ router.post('/', async (req: Request, res: Response) => {
 router.get('/', verifyToken, branchLock, requireRole(['BRANCH_MANAGER', 'CHEF', 'WAITER']), async (req, res) => {
   const branchId = parseInt(req.params['branchId'] as string ?? '0', 10);
   const queue = await prisma.order.findMany({
-    where: { branchId, NOT: { status: 'COMPLETED' } },
+    where: { 
+      branchId, 
+      OR: [
+        { NOT: { status: 'COMPLETED' } }, // Show pending, in-progress, and ready orders
+        { status: 'COMPLETED', isPaid: false } // ALSO show completed orders that haven't been paid yet!
+      ]
+    },
     orderBy: { createdAt: 'asc' }
   });
   res.json(queue);
