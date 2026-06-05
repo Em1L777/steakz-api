@@ -29,7 +29,8 @@ router.get('/metrics', verifyToken, branchLock, requireRole(['BRANCH_MANAGER', '
     const aggregation = await prisma.order.aggregate({
       where: {
         branchId,
-        isPaid: true
+        isPaid: true,
+        status: 'COMPLETED'
       },
       _sum: {
         totalPrice: true
