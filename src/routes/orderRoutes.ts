@@ -92,16 +92,23 @@ router.post('/', async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/branches/:branchId/orders — Kitchen/Floor Active Display queues
+// GET /api/branches/:branchId/orders — Kitchen/Floor Active Display queues & Manager Audits
 router.get('/', verifyToken, branchLock, requireRole(['BRANCH_MANAGER', 'CHEF', 'WAITER']), async (req, res) => {
   const branchId = parseInt(req.params['branchId'] as string ?? '0', 10);
+  
+  // Check if the request comes with the 'all' flag enabled
+  const includeAllHistory = req.query['all'] === 'true';
+
   const queue = await prisma.order.findMany({
     where: { 
       branchId, 
-      OR: [
-        { NOT: { status: 'COMPLETED' } }, // Show pending, in-progress, and ready orders
-        { status: 'COMPLETED', isPaid: false } // ALSO show completed orders that haven't been paid yet!
-      ]
+      ...(includeAllHistory ? {} : {
+        // Safe backward-compatible guard fallback for live display monitors
+        OR: [
+          { NOT: { status: 'COMPLETED' } }, // Show pending, in-progress, and ready orders
+          { status: 'COMPLETED', isPaid: false } // ALSO show completed orders that haven't been paid yet!
+        ]
+      })
     },
     orderBy: { createdAt: 'asc' }
   });
