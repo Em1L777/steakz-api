@@ -141,7 +141,7 @@ router.patch('/:id/pay', verifyToken, branchLock, requireRole(['WAITER']), async
 
   try {
     const settledOrder = await prisma.order.update({
-      where: { id: orderId },
+      where: { id:Number(orderId) },
       data: {
         status: 'COMPLETED', // Safely move out of active displays ONLY now
         isPaid: true         // Triggers inclusion in report metrics
