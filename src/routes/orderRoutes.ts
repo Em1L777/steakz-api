@@ -127,6 +127,14 @@ router.patch('/:id/status', verifyToken, branchLock, requireRole(['WAITER', 'CHE
       where: { id: orderId },
       data: { status }
     });
+
+    console.log("UPDATED:", updatedOrder);
+
+const check = await prisma.order.findUnique({
+  where: { id: orderId }
+});
+
+console.log("DB CHECK:", check);
     res.json({ message: 'State matrix updated.', order: updatedOrder });
   } catch (error) {
     res.status(400).json({ error: 'Failed to transition step.' });
