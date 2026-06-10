@@ -245,6 +245,29 @@ router.patch('/users/:id/branch', async (req, res) => {
   }
 });
 
+// GET /api/admin/branches — Retrieve all registered branches in the system
+router.get('/branches', async (req: Request, res: Response) => {
+  try {
+    // Controller Logic: Query the database selecting only required payload fields
+    const branches = await prisma.branch.findMany({
+      select: {
+        id: true,
+        name: true
+      },
+      orderBy: {
+        id: 'asc' // Sorted by ID sequence for UI predictability
+      }
+    });
+
+    // Return the payload data matrix cleanly as JSON
+    return res.json(branches);
+  } catch (error: any) {
+    console.error('Error fetching system branch registry:', error);
+    return res.status(500).json({ 
+      error: 'An internal server error occurred while retrieving infrastructure branch locations.' 
+    });
+  }
+});
 
 
 export default router;
