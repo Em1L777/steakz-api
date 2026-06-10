@@ -32,8 +32,14 @@ router.post('/', async (req: Request, res: Response) => {
     tableNumber?: number; details?: string; totalPrice?: number;
   };
 
-  if (!tableNumber || !details || totalPrice === undefined) {
+ if (tableNumber === undefined || tableNumber === null || !details || totalPrice === undefined) {
     res.status(400).json({ error: 'Table specification, menu item data details, and total calculation are required.' });
+    return;
+  }
+
+  // Reject decimals, negative numbers, empty inputs, or numbers above physical seating limits (1-100)
+  if (!Number.isInteger(tableNumber) || tableNumber < 1 || tableNumber > 100) {
+    res.status(400).json({ error: 'Invalid Table Assignment: Must be a whole number between 1 and 100.' });
     return;
   }
 
